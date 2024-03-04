@@ -1,0 +1,16 @@
+{
+  "base_model_name": "Tap-M_Luna-AI-Llama2-Uncensored",
+  "base_model_class": "LlamaForCausalLM",
+  "base_loaded_in_4bit": true,
+  "base_loaded_in_8bit": false,
+  "projections": "q, v",
+  "loss": 3.9047,
+  "learning_rate": 0.000225,
+  "epoch": 2.81,
+  "current_steps": 141,
+  "train_runtime": 578.9019,
+  "train_samples_per_second": 1.961,
+  "train_steps_per_second": 0.009,
+  "total_flos": 6491426443493376.0,
+  "train_loss": 3.904702377319336
+}
