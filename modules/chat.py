@@ -14,6 +14,7 @@ from jinja2.sandbox import ImmutableSandboxedEnvironment
 from PIL import Image
 
 import modules.shared as shared
+from modules import utils
 from modules.extensions import apply_extensions
 from modules.html_generator import chat_html_wrapper, make_thumbnail
 from modules.logging_colors import logger
@@ -81,7 +82,11 @@ def generate_chat_prompt(user_input, state, **kwargs):
     history = kwargs.get('history', state['history'])['internal']
 
     # Templates
-    chat_template = jinja_env.from_string(state['chat_template_str'])
+    chat_template_str = state['chat_template_str']
+    if state['mode'] != 'instruct':
+        chat_template_str = replace_character_names(chat_template_str, state['name1'], state['name2'])
+
+    chat_template = jinja_env.from_string(chat_template_str)
     instruction_template = jinja_env.from_string(state['instruction_template_str'])
     chat_renderer = partial(chat_template.render, add_generation_prompt=False, name1=state['name1'], name2=state['name2'])
     instruct_renderer = partial(instruction_template.render, add_generation_prompt=False)
@@ -168,15 +173,51 @@ def generate_chat_prompt(user_input, state, **kwargs):
     prompt = make_prompt(messages)
 
     # Handle truncation
-    max_length = get_max_prompt_length(state)
-    while len(messages) > 0 and get_encoded_length(prompt) > max_length:
-        # Try to save the system message
-        if len(messages) > 1 and messages[0]['role'] == 'system':
-            messages.pop(1)
-        else:
-            messages.pop(0)
+    if shared.tokenizer is not None:
+        max_length = get_max_prompt_length(state)
+        encoded_length = get_encoded_length(prompt)
+        while len(messages) > 0 and encoded_length > max_length:
 
-        prompt = make_prompt(messages)
+            # Remove old message, save system message
+            if len(messages) > 2 and messages[0]['role'] == 'system':
+                messages.pop(1)
+
+            # Remove old message when no system message is present
+            elif len(messages) > 1 and messages[0]['role'] != 'system':
+                messages.pop(0)
+
+            # Resort to truncating the user input
+            else:
+
+                user_message = messages[-1]['content']
+
+                # Bisect the truncation point
+                left, right = 0, len(user_message) - 1
+
+                while right - left > 1:
+                    mid = (left + right) // 2
+
+                    messages[-1]['content'] = user_message[:mid]
+                    prompt = make_prompt(messages)
+                    encoded_length = get_encoded_length(prompt)
+
+                    if encoded_length <= max_length:
+                        left = mid
+                    else:
+                        right = mid
+
+                messages[-1]['content'] = user_message[:left]
+                prompt = make_prompt(messages)
+                encoded_length = get_encoded_length(prompt)
+                if encoded_length > max_length:
+                    logger.error(f"Failed to build the chat prompt. The input is too long for the available context length.\n\nTruncation length: {state['truncation_length']}\nmax_new_tokens: {state['max_new_tokens']} (is it too high?)\nAvailable context length: {max_length}\n")
+                    raise ValueError
+                else:
+                    logger.warning(f"The input has been truncated. Context length: {state['truncation_length']}, max_new_tokens: {state['max_new_tokens']}, available context length: {max_length}.")
+                    break
+
+            prompt = make_prompt(messages)
+            encoded_length = get_encoded_length(prompt)
 
     if also_return_rows:
         return prompt, [message['content'] for message in messages]
@@ -460,11 +501,11 @@ def rename_history(old_id, new_id, character, mode):
     old_p = get_history_file_path(old_id, character, mode)
     new_p = get_history_file_path(new_id, character, mode)
     if new_p.parent != old_p.parent:
-        logger.error(f"The following path is not allowed: {new_p}.")
+        logger.error(f"The following path is not allowed: \"{new_p}\".")
     elif new_p == old_p:
         logger.info("The provided path is identical to the old one.")
     else:
-        logger.info(f"Renaming {old_p} to {new_p}")
+        logger.info(f"Renaming \"{old_p}\" to \"{new_p}\"")
         old_p.rename(new_p)
 
 
@@ -481,12 +522,13 @@ def find_all_histories(state):
         old_p = Path(f'logs/{character}_persistent.json')
         new_p = Path(f'logs/persistent_{character}.json')
         if old_p.exists():
-            logger.warning(f"Renaming {old_p} to {new_p}")
+            logger.warning(f"Renaming \"{old_p}\" to \"{new_p}\"")
             old_p.rename(new_p)
+
         if new_p.exists():
             unique_id = datetime.now().strftime('%Y%m%d-%H-%M-%S')
             p = get_history_file_path(unique_id, character, state['mode'])
-            logger.warning(f"Moving {new_p} to {p}")
+            logger.warning(f"Moving \"{new_p}\" to \"{p}\"")
             p.parent.mkdir(exist_ok=True)
             new_p.rename(p)
 
@@ -515,6 +557,35 @@ def load_latest_history(state):
         history = start_new_chat(state)
 
     return history
+
+
+def load_history_after_deletion(state, idx):
+    '''
+    Loads the latest history for the given character in chat or chat-instruct
+    mode, or the latest instruct history for instruct mode.
+    '''
+
+    if shared.args.multi_user:
+        return start_new_chat(state)
+
+    histories = find_all_histories(state)
+    idx = min(int(idx), len(histories) - 1)
+    idx = max(0, idx)
+
+    if len(histories) > 0:
+        history = load_history(histories[idx], state['character_menu'], state['mode'])
+    else:
+        history = start_new_chat(state)
+        histories = find_all_histories(state)
+
+    return history, gr.update(choices=histories, value=histories[idx])
+
+
+def update_character_menu_after_deletion(idx):
+    characters = utils.get_available_characters()
+    idx = min(int(idx), len(characters) - 1)
+    idx = max(0, idx)
+    return gr.update(choices=characters, value=characters[idx])
 
 
 def load_history(unique_id, character, mode):
@@ -625,6 +696,9 @@ def load_character(character, name1, name2):
 
 
 def load_instruction_template(template):
+    if template == 'None':
+        return ''
+
     for filepath in [Path(f'instruction-templates/{template}.yaml'), Path('instruction-templates/Alpaca.yaml')]:
         if filepath.exists():
             break

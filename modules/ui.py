@@ -76,6 +76,8 @@ def list_model_elements():
         'no_flash_attn',
         'num_experts_per_token',
         'cache_8bit',
+        'cache_4bit',
+        'autosplit',
         'threads',
         'threads_batch',
         'n_batch',
@@ -93,7 +95,10 @@ def list_model_elements():
         'numa',
         'logits_all',
         'no_offload_kqv',
+        'row_split',
         'tensorcores',
+        'streaming_llm',
+        'attention_sink_size',
         'hqq_backend',
     ]
     if is_torch_xpu_available():
@@ -112,11 +117,16 @@ def list_interface_input_elements():
         'auto_max_new_tokens',
         'max_tokens_second',
         'max_updates_second',
+        'prompt_lookup_num_tokens',
         'seed',
         'temperature',
         'temperature_last',
         'dynamic_temperature',
-        'dynamic_temperature_low',
+        'dynatemp_low',
+        'dynatemp_high',
+        'dynatemp_exponent',
+        'smoothing_factor',
+        'smoothing_curve',
         'top_p',
         'min_p',
         'top_k',
@@ -144,6 +154,7 @@ def list_interface_input_elements():
         'add_bos_token',
         'ban_eos_token',
         'custom_token_bans',
+        'sampler_priority',
         'truncation_length',
         'custom_stopping_strings',
         'skip_special_tokens',
@@ -207,7 +218,7 @@ def apply_interface_values(state, use_persistent=False):
         return [state[k] if k in state else gr.update() for k in elements]
 
 
-def save_settings(state, preset, extensions_list, show_controls):
+def save_settings(state, preset, extensions_list, show_controls, theme_state):
     output = copy.deepcopy(shared.settings)
     exclude = ['name2', 'greeting', 'context', 'turn_template']
     for k in state:
@@ -221,6 +232,7 @@ def save_settings(state, preset, extensions_list, show_controls):
     output['default_extensions'] = extensions_list
     output['seed'] = int(output['seed'])
     output['show_controls'] = show_controls
+    output['dark_theme'] = True if theme_state == 'dark' else False
 
     # Save extension values in the UI
     for extension_name in extensions_list:
@@ -229,7 +241,14 @@ def save_settings(state, preset, extensions_list, show_controls):
             params = getattr(extension, 'params')
             for param in params:
                 _id = f"{extension_name}-{param}"
-                output[_id] = params[param]
+                # Only save if different from default value
+                if param not in shared.default_settings or params[param] != shared.default_settings[param]:
+                    output[_id] = params[param]
+
+    # Do not save unchanged settings
+    for key in list(output.keys()):
+        if key in shared.default_settings and output[key] == shared.default_settings[key]:
+            output.pop(key)
 
     return yaml.dump(output, sort_keys=False, width=float("inf"))
 
@@ -242,14 +261,11 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
         refresh_method()
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
 
-        for k, v in args.items():
-            setattr(refresh_component, k, v)
-
         return gr.update(**(args or {}))
 
     refresh_button = gr.Button(refresh_symbol, elem_classes=elem_class, interactive=interactive)
     refresh_button.click(
-        fn=refresh,
+        fn=lambda: {k: tuple(v) if type(k) is list else v for k, v in refresh().items()},
         inputs=[],
         outputs=[refresh_component]
     )

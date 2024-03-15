@@ -195,8 +195,9 @@ button {
     border: var(--input-border-width) solid var(--input-border-color) !important;
 }
 
-.file-saver > :first-child > :nth-child(2) {
+.file-saver > :first-child > :last-child {
     background: var(--block-background-fill);
+    justify-content: flex-end;
 }
 
 .checkboxgroup-table label {
@@ -340,6 +341,7 @@ div.svelte-362y77>*, div.svelte-362y77>.form>* {
     overflow-wrap: anywhere;
     border-top: none;
     border-radius: 0 0 0 8px;
+    visibility: visible;
 }
 
 .chat-parent {
@@ -347,6 +349,18 @@ div.svelte-362y77>*, div.svelte-362y77>.form>* {
     overflow: auto !important;
     border-radius: 0 !important;
     margin-bottom: var(--input-delta) !important;
+}
+
+/* On desktop, automatically hide the chat scroll bar
+ * when not hovered. */
+@media (hover: hover) and (pointer: fine) {
+    .chat-parent {
+        visibility: hidden;
+    }
+
+    .chat-parent:focus, .chat-parent:hover {
+        visibility: visible;
+    }
 }
 
 .old-ui .chat-parent {
@@ -405,6 +419,10 @@ div.svelte-362y77>*, div.svelte-362y77>.form>* {
 
 .message-body pre:last-child {
     margin-bottom: 0 !important;
+}
+
+#default-tab .prose pre, #notebook-tab .prose pre {
+    overflow: scroll;
 }
 
 .message-body code {
@@ -489,7 +507,10 @@ div.svelte-362y77>*, div.svelte-362y77>.form>* {
 #show-controls label {
     z-index: 1000;
     position: absolute;
-    left: calc(100% - 168px);
+    right: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 #show-controls span {
@@ -652,12 +673,31 @@ div.svelte-362y77>*, div.svelte-362y77>.form>* {
 /* ----------------------------------------------
   Past chats menus
 ---------------------------------------------- */
-#past-chats-row {
-    margin-bottom: calc( -1 * var(--layout-gap) );
-}
-
 #rename-row label {
     margin-top: var(--layout-gap);
+}
+
+/* ----------------------------------------------
+  Past chat histories in a side bar on desktop
+---------------------------------------------- */
+@media screen and (width >= 1327px) {
+    #past-chats-row {
+        position: absolute;
+        top: 16px;
+        left: 0;
+        width: calc(0.5*(var(--document-width) - 880px - 120px - 16px*2));
+        max-width: 300px;
+        margin-left: calc(-0.5*(var(--document-width) - 880px - 14px - 16px * 2));
+    }
+
+    #chat-controls {
+        position: absolute;
+        top: 16px;
+        right: 0;
+        width: calc(0.5*(var(--document-width) - 880px - 120px - 16px*2));
+        max-width: 400px;
+        margin-right: calc(-0.5*(var(--document-width) - 880px - 14px - 16px * 2));
+    }
 }
 
 /* ----------------------------------------------
@@ -675,6 +715,11 @@ div.svelte-362y77>*, div.svelte-362y77>.form>* {
     bottom: 0;
     left: 0;
     width: calc((100vw - 880px - 120px) /2);
+}
+
+.pfp_character {
+    position: relative;
+    z-index: 100;
 }
 
 .pfp_character:hover {

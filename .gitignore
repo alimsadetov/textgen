@@ -1,9 +1,11 @@
 /cache
+/characters
 /css
 /extensions
 /grammars
 /installer_files
 /logs
+/loras
 /models
 /presets
 /prompts

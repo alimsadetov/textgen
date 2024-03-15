@@ -37,6 +37,7 @@ document.querySelector(".header_bar").addEventListener("click", function(event) 
 //------------------------------------------------
 // Keyboard shortcuts
 //------------------------------------------------
+let previousTabId = "chat-tab-button";
 document.addEventListener("keydown", function(event) {
 
   // Stop generation on Esc pressed
@@ -97,6 +98,20 @@ document.addEventListener("keydown", function(event) {
     document.getElementById("Impersonate").click();
   }
 
+  // Switch between tabs on Tab
+  else if (!event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && event.key === "Tab") {
+    event.preventDefault();
+    var parametersButton = document.getElementById("parameters-button");
+    var parentContainer = parametersButton.parentNode;
+    var selectedChild = parentContainer.querySelector(".selected");
+
+    if (selectedChild.id == "parameters-button") {
+      document.getElementById(previousTabId).click();
+    } else {
+      previousTabId = selectedChild.id;
+      parametersButton.click();
+    }
+  }
 });
 
 //------------------------------------------------
@@ -248,7 +263,7 @@ button.addEventListener("click", function () {
     hideMenu();
   }
   else {
-  showMenu();
+    showMenu();
   }
 });
 
@@ -304,7 +319,29 @@ document.getElementById("show-controls").parentNode.style.bottom = "0px";
 //------------------------------------------------
 // Focus on the chat input
 //------------------------------------------------
-document.querySelector("#chat-input textarea").focus();
+const chatTextArea = document.getElementById("chat-input").querySelector("textarea");
+
+function respondToChatInputVisibility(element, callback) {
+  var options = {
+    root: document.documentElement,
+  };
+
+  var observer = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+      callback(entry.intersectionRatio > 0);
+    });
+  }, options);
+
+  observer.observe(element);
+}
+
+function handleChatInputVisibilityChange(isVisible) {
+  if (isVisible) {
+    chatTextArea.focus();
+  }
+}
+
+respondToChatInputVisibility(chatTextArea, handleChatInputVisibilityChange);
 
 //------------------------------------------------
 // Show enlarged character picture when the profile
@@ -317,6 +354,12 @@ function addBigPicture() {
   var timestamp = new Date().getTime();
   imgElement.src = "/file/cache/pfp_character.png?time=" + timestamp;
   imgElement.classList.add("bigProfilePicture");
+  imgElement.addEventListener("load", function () {
+    this.style.visibility = "visible";
+  });
+  imgElement.addEventListener("error", function () {
+    this.style.visibility = "hidden";
+  });
 
   var imgElementParent = document.getElementById("chat").parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode;
   imgElementParent.appendChild(imgElement);
@@ -340,34 +383,84 @@ function toggleBigPicture() {
 }
 
 //------------------------------------------------
-// Define global CSS properties for resizing and
-// positioning certain elements
+// Handle the chat input box growth
 //------------------------------------------------
 let currentChatInputHeight = 0;
 
+// Update chat layout based on chat and input dimensions
 function updateCssProperties() {
-  // Set the height of the chat area
   const chatContainer = document.getElementById("chat").parentNode.parentNode.parentNode;
   const chatInputHeight = document.querySelector("#chat-input textarea").clientHeight;
+
+  // Check if the chat container is visible
   if (chatContainer.clientHeight > 0) {
-    const newChatHeight = `${chatContainer.clientHeight - chatInputHeight + 40}px`;
+
+    // Calculate new chat height and adjust CSS properties
+    var numericHeight = chatContainer.parentNode.clientHeight - chatInputHeight + 40 - 100;
+    if (document.getElementById("chat-tab").style.paddingBottom != "") {
+      numericHeight += 20;
+    }
+    const newChatHeight = `${numericHeight}px`;
+
     document.documentElement.style.setProperty("--chat-height", newChatHeight);
     document.documentElement.style.setProperty("--input-delta", `${chatInputHeight - 40}px`);
 
-    // Set the position offset of the chat input box
+    // Get and set header height
     const header = document.querySelector(".header_bar");
     const headerHeight = `${header.clientHeight}px`;
     document.documentElement.style.setProperty("--header-height", headerHeight);
 
-    // Offset the scroll position of the chat area
+    // Adjust scrollTop based on input height change
     if (chatInputHeight !== currentChatInputHeight) {
-      chatContainer.scrollTop += chatInputHeight > currentChatInputHeight ? chatInputHeight : -chatInputHeight;
+      chatContainer.scrollTop += chatInputHeight > currentChatInputHeight ? chatInputHeight : -chatInputHeight + 40;
       currentChatInputHeight = chatInputHeight;
     }
   }
 }
 
+// Observe textarea size changes and call update function
 new ResizeObserver(updateCssProperties)
   .observe(document.querySelector("#chat-input textarea"));
 
+// Handle changes in window size
 window.addEventListener("resize", updateCssProperties);
+
+//------------------------------------------------
+// Keep track of the display width to position the past
+// chats dropdown on desktop
+//------------------------------------------------
+function updateDocumentWidth() {
+  var updatedWidth = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+  document.documentElement.style.setProperty("--document-width", updatedWidth + "px");
+}
+
+updateDocumentWidth();
+window.addEventListener("resize", updateDocumentWidth);
+
+//------------------------------------------------
+// Focus on the rename text area when it becomes visible
+//------------------------------------------------
+const renameTextArea = document.getElementById("rename-row").querySelector("textarea");
+
+function respondToRenameVisibility(element, callback) {
+  var options = {
+    root: document.documentElement,
+  };
+
+  var observer = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+      callback(entry.intersectionRatio > 0);
+    });
+  }, options);
+
+  observer.observe(element);
+}
+
+
+function handleVisibilityChange(isVisible) {
+  if (isVisible) {
+    renameTextArea.focus();
+  }
+}
+
+respondToRenameVisibility(renameTextArea, handleVisibilityChange);
